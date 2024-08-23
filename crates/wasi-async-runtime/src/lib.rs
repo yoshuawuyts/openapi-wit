@@ -19,4 +19,4 @@ mod polling;
 mod reactor;
 
 pub use block_on::block_on;
-pub use reactor::Reactor;
+pub use reactor::{PollHandle, Reactor};

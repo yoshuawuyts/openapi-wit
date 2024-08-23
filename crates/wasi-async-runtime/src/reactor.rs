@@ -1,10 +1,13 @@
-use super::polling::{EventKey, Poller};
+use super::{
+    block_on::noop_waker,
+    polling::{EventKey, Poller},
+};
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
-use core::future;
 use core::task::Poll;
 use core::task::Waker;
+use core::{future, task};
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
 #[cfg(feature = "std")]
@@ -58,33 +61,91 @@ impl Reactor {
         }
     }
 
+    /// Register interest in a [Pollable].
+    ///
+    /// If you're not implementing a [Poll] trait, then see [Self::wait_for].
+    pub fn register(&self, pollable: Pollable) -> PollHandle {
+        PollHandle::register(self.inner.clone(), pollable)
+    }
+
     /// Wait for the pollable to resolve.
     pub async fn wait_for(&self, pollable: Pollable) {
         let mut pollable = Some(pollable);
-        let mut key = None;
+        let mut handle = None;
 
         // This function is the core loop of our function; it will be called
         // multiple times as the future is resolving.
         future::poll_fn(|cx| {
-            // Start by taking a lock on the reactor. This is single-threaded
-            // and short-lived, so it will never be contended.
-            let mut reactor = self.inner.borrow_mut();
+            // Reuse the existing [PollHandle] from previous iterations.
+            let handle = &*handle.get_or_insert_with(|| {
+                // Exchange the [Pollable] for a [PollHandle] on the first iteration.
+                self.register(pollable.take().unwrap())
+            });
 
-            // Schedule interest in the `pollable` on the first iteration. On
-            // every iteration, register the waker with the reactor.
-            let key = key.get_or_insert_with(|| reactor.poller.insert(pollable.take().unwrap()));
-            reactor.wakers.insert(*key, cx.waker().clone());
-
-            // Check whether we're ready or need to keep waiting. If we're
-            // ready, we clean up after ourselves.
-            if reactor.poller.get(key).unwrap().ready() {
-                reactor.poller.remove(*key);
-                reactor.wakers.remove(key);
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
+            // Check whether we're ready or need to keep waiting.
+            // NOTE: this will be cleaned up on drop.
+            handle.poll(cx)
         })
-        .await
+        .await;
+    }
+}
+
+/// Manages lifecycle of a [Pollable] being registered in a [Reactor]
+#[derive(Debug)]
+pub struct PollHandle {
+    inner: Rc<RefCell<InnerReactor>>,
+    key: EventKey,
+}
+
+impl PollHandle {
+    /// Register interest in a [Pollable].
+    ///
+    /// If you're not implementing a [Poll] trait, then see [Reactor::wait_for].
+    ///
+    /// After registration you may then use [Self::poll_for] to both update the
+    /// [Waker] and check the [Poll] status of the [Pollable].
+    fn register(reactor: Rc<RefCell<InnerReactor>>, pollable: Pollable) -> Self {
+        let key = {
+            // Take a lock on the reactor. This is single-threaded and
+            // short-lived, so it will never be contended.
+            let mut reactor = reactor.borrow_mut();
+
+            // Schedule interest in the [Pollable] and register the [Waker] with
+            // the [Reactor].
+            let key = reactor.poller.insert(pollable);
+            reactor.wakers.insert(key, noop_waker());
+            key
+        };
+
+        Self {
+            inner: reactor,
+            key,
+        }
+    }
+
+    /// Check progress of the [Pollable] we're tracking.
+    pub fn poll(&self, cx: &mut task::Context<'_>) -> Poll<()> {
+        let waker = cx.waker().clone();
+        let key = &self.key;
+        let mut reactor = self.inner.borrow_mut();
+
+        // Update the [Waker] being tracked.
+        reactor.wakers.insert(*key, waker);
+
+        // Check whether we're ready or need to keep waiting.
+        if reactor.poller.get(key).unwrap().ready() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for PollHandle {
+    fn drop(&mut self) {
+        let key = self.key;
+        let mut reactor = self.inner.borrow_mut();
+        reactor.poller.remove(key);
+        reactor.wakers.remove(&key);
     }
 }

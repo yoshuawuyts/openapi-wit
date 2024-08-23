@@ -35,7 +35,7 @@ where
 
 /// Construct a new no-op waker
 // NOTE: we can remove this once <https://github.com/rust-lang/rust/issues/98286> lands
-fn noop_waker() -> Waker {
+pub(crate) fn noop_waker() -> Waker {
     const VTABLE: RawWakerVTable = RawWakerVTable::new(
         // Cloning just returns a new no-op raw waker
         |_| RAW,
