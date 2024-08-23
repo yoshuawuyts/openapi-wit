@@ -16,7 +16,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-wasi = "0.12.1"
+wasi = { workspace = true }
 slab = { version = "0.4.9", default-features = false }
 hashbrown = "0.14.3"
 
