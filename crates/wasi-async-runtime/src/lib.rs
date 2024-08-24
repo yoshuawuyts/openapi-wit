@@ -17,6 +17,9 @@ extern crate alloc;
 mod block_on;
 mod polling;
 mod reactor;
+#[cfg(feature = "futures-lite")]
+/// Provides convenience wrappers around [wasi::io::streams]
+pub mod streams;
 
 pub use block_on::block_on;
 pub use reactor::{PollHandle, Reactor};
