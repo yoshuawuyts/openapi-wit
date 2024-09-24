@@ -14,9 +14,9 @@ authors = ["Yoshua Wuyts <rust@yosh.is>"]
 [features]
 
 [dependencies]
-wasi = "0.12.1"
-slab = "0.4.9"
-url = "2.5.0"
+wasi = { workspace = true }
+slab = { workspace = true }
+url = { workspace = true }
 wasi-async-runtime = { workspace = true }
 async-iterator = "2.3.0"
 

@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-wasi = "0.12.1"
+wasi = "=0.13.1"
 slab = "0.4.9"
 url = "2.5.0"
-wasi-async-runtime = { version = "0.1.2", path = "crates/wasi-async-runtime" }
+wasi-async-runtime = { version = "0.1.3", path = "crates/wasi-async-runtime" }
